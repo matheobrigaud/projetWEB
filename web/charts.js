@@ -61,6 +61,30 @@ const DEFINITIONS = (data) => [
   { id: 'def', title: 'Mécanismes de défense utilisés', type: 'polarArea', ...data.defenses }
 ];
 
+// Résumé court ("écriteau") affiché quand le joueur s'approche du panneau.
+function computeInsight(def) {
+  const total = def.values.reduce((a, b) => a + b, 0) || 1;
+  const maxIdx = def.values.indexOf(Math.max(...def.values));
+  const topLabel = def.labels[maxIdx];
+  const topVal = def.values[maxIdx];
+  const pct = Math.round((topVal / total) * 100);
+  const fmt = (n) => Math.round(n).toLocaleString('fr-FR');
+  switch (def.id) {
+    case 'evt': {
+      const first = def.values[0] || 0;
+      const last = def.values[def.values.length - 1] || 0;
+      const diff = first ? Math.round(((last - first) / first) * 100) : 0;
+      return `Évolution ${def.labels[0]} → ${def.labels[def.labels.length - 1]} : ${diff >= 0 ? '+' : ''}${diff}%`;
+    }
+    case 'atk': return `Le plus fréquent : ${topLabel} (${pct}% des incidents)`;
+    case 'sev': return `${topLabel} domine : ${pct}% des cas`;
+    case 'pays': return `${topLabel} en tête avec ${fmt(topVal)} événements`;
+    case 'sect': return `${topLabel} : secteur le plus ciblé (${pct}%)`;
+    case 'def': return `${topLabel} : mécanisme le plus utilisé (${pct}%)`;
+    default: return '';
+  }
+}
+
 const chartsById = {};      // id -> Chart (texture 3D)
 const flatChartsById = {};  // id -> Chart (tableau de bord 2D)
 const texCanvasById = {};   // id -> <canvas> (texture 3D)
@@ -110,7 +134,7 @@ window.buildDashboard = function (data) {
     chartsById[def.id] = texChart;
     flatChartsById[def.id] = flatChart;
     texCanvasById[def.id] = $texCanvas[0];
-    metaById[def.id] = { title: def.title, labels: def.labels, values: def.values, type: def.type };
+    metaById[def.id] = { title: def.title, labels: def.labels, values: def.values, type: def.type, insight: computeInsight(def) };
 
     results.push({ id: def.id, title: def.title, canvas: $texCanvas[0] });
   });
@@ -131,7 +155,7 @@ window.updateDashboard = function (data) {
       if (ch.config.type !== 'line') ch.data.datasets[0].backgroundColor = colors;
       ch.update('none');
     });
-    metaById[def.id] = { title: def.title, labels: def.labels, values: def.values, type: def.type };
+    metaById[def.id] = { title: def.title, labels: def.labels, values: def.values, type: def.type, insight: computeInsight(def) };
     updatedIds.push(def.id);
     if (window.onChartTextureDirty) window.onChartTextureDirty(def.id);
   });

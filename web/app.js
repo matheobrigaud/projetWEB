@@ -233,10 +233,49 @@ function makeLabelSprite(text) {
 
 const textureById = {};
 const panelMeshes = [];
+const insightById = {}; // id -> { sprite, canvas, ctx, texture, worldX, worldZ }
+const PROXIMITY_FAR = 6.5;
+const PROXIMITY_NEAR = 3;
+
+function drawInsightCanvas(canvas, text) {
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = 'rgba(13,17,23,0.88)';
+  ctx.strokeStyle = '#4dabf7';
+  ctx.lineWidth = 3;
+  const r = 14;
+  ctx.beginPath();
+  ctx.roundRect(4, 4, canvas.width - 8, canvas.height - 8, r);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = '#eaf4ff';
+  ctx.font = '600 30px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+}
+
+function makeInsightSprite(id, text) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 640; canvas.height = 130;
+  drawInsightCanvas(canvas, text);
+  const texture = new THREE.CanvasTexture(canvas);
+  const material = new THREE.SpriteMaterial({ map: texture, transparent: true, opacity: 0 });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(3.0, 0.6, 1);
+  insightById[id] = { sprite, canvas, texture, opacity: 0 };
+  return sprite;
+}
 
 // Appelé par charts.js quand un graphique est mis à jour (filtre année, curseur temporel)
 window.onChartTextureDirty = (id) => {
   if (textureById[id]) textureById[id].needsUpdate = true;
+  const insight = insightById[id];
+  const meta = window.getChartMeta(id);
+  if (insight && meta) {
+    drawInsightCanvas(insight.canvas, meta.insight);
+    insight.texture.needsUpdate = true;
+  }
 };
 
 function buildPanels(chartList) {
@@ -277,6 +316,15 @@ function buildPanels(chartList) {
     const label = makeLabelSprite(item.title);
     label.position.set(x * 1.02, 3.3, z * 1.02);
     group.add(label);
+
+    // Plaque d'analyse : invisible par défaut, apparaît en fondu quand on s'approche
+    const meta = window.getChartMeta(item.id);
+    const insightSprite = makeInsightSprite(item.id, meta ? meta.insight : '');
+    const plaqueRadius = radius - 1.6;
+    insightSprite.position.set(Math.cos(angle) * plaqueRadius, 1.1, Math.sin(angle) * plaqueRadius);
+    insightById[item.id].worldX = x;
+    insightById[item.id].worldZ = z;
+    group.add(insightSprite);
   });
 
   scene.add(group);
@@ -335,6 +383,18 @@ function updateTooltip() {
   tooltip3d.style.display = 'none';
 }
 
+function updateInsightPlaques(delta) {
+  const px = yawObject.position.x, pz = yawObject.position.z;
+  for (const id in insightById) {
+    const info = insightById[id];
+    const dist = Math.hypot(px - info.worldX, pz - info.worldZ);
+    let target = (PROXIMITY_FAR - dist) / (PROXIMITY_FAR - PROXIMITY_NEAR);
+    target = Math.max(0, Math.min(1, target));
+    info.opacity += (target - info.opacity) * Math.min(1, delta * 6);
+    info.sprite.material.opacity = info.opacity;
+  }
+}
+
 const clock = new THREE.Clock();
 function animate() {
   requestAnimationFrame(animate);
@@ -353,11 +413,12 @@ function animate() {
     if (move.left || move.right) velocity.x -= dir.x * SPEED * 10 * delta;
 
     yawObject.translateX(-velocity.x * delta);
-    yawObject.translateZ(-velocity.z * delta);
+    yawObject.translateZ(velocity.z * delta);
     clampToRoom();
   }
 
   updateTooltip();
+  updateInsightPlaques(delta);
   renderer.render(scene, camera);
 }
 animate();

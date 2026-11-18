@@ -70,7 +70,7 @@ window.buildDashboard = function (data) {
   defs.forEach(def => {
     const cfg = chartConfig(def.type, def.labels, def.values, def.title);
 
-    const $texCanvas = $('<canvas>').attr({ id: 'tex-' + def.id, width: 1024, height: 640 });
+    const $texCanvas = $('<canvas>').attr({ id: 'tex-' + def.id, width: 768, height: 480 });
     $factory.append($texCanvas);
     new Chart($texCanvas[0].getContext('2d'), cfg);
 

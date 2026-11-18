@@ -11,17 +11,14 @@ camera.position.set(0, 1.7, 0);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 document.body.appendChild(renderer.domElement);
 
-scene.add(new THREE.HemisphereLight(0xffffff, 0x222233, 1.2));
-const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
-dirLight.position.set(5, 10, 5);
-scene.add(dirLight);
-
+// Matériaux non-éclairés (MeshBasicMaterial) partout : pas de lumières à calculer -> beaucoup plus léger.
 // Sol
 const floor = new THREE.Mesh(
   new THREE.CircleGeometry(14, 48),
-  new THREE.MeshStandardMaterial({ color: 0x1a2029, roughness: 0.9 })
+  new THREE.MeshBasicMaterial({ color: 0x1a2029 })
 );
 floor.rotation.x = -Math.PI / 2;
 scene.add(floor);
@@ -33,19 +30,16 @@ scene.add(grid);
 
 // --- Déplacement / contrôles ---
 const controls = new PointerLockControls(camera, document.body);
-const blocker = document.getElementById('blocker');
+const hint = document.getElementById('hint');
 const hud = document.getElementById('hud');
 const crosshair = document.createElement('div');
 crosshair.id = 'crosshair';
 document.body.appendChild(crosshair);
 
-blocker.addEventListener('click', () => controls.lock());
-controls.addEventListener('lock', () => { blocker.style.display = 'none'; });
-controls.addEventListener('unlock', () => {
-  if (document.getElementById('dashboard2d').style.display !== 'block') {
-    blocker.style.display = 'flex';
-  }
-});
+const isDashboardOpen = () => document.getElementById('dashboard2d').style.display === 'block';
+renderer.domElement.addEventListener('click', () => { if (!isDashboardOpen()) controls.lock(); });
+controls.addEventListener('lock', () => hint.classList.add('hidden'));
+controls.addEventListener('unlock', () => { if (!isDashboardOpen()) hint.classList.remove('hidden'); });
 
 const move = { forward: false, backward: false, left: false, right: false };
 const velocity = new THREE.Vector3();
@@ -75,11 +69,10 @@ function toggleDashboard2D() {
   panel.style.display = show ? 'block' : 'none';
   if (show) {
     controls.unlock();
-    blocker.style.display = 'none';
+    hint.classList.add('hidden');
     hud.style.display = 'none';
   } else {
     hud.style.display = 'block';
-    blocker.style.display = 'flex';
   }
 }
 document.getElementById('closeDashboard').addEventListener('click', toggleDashboard2D);
@@ -140,7 +133,7 @@ function buildPanels(chartList) {
     const frameRadius = radius + 0.05;
     const frame = new THREE.Mesh(
       new THREE.PlaneGeometry(4.2, 2.7),
-      new THREE.MeshStandardMaterial({ color: 0x2a323c })
+      new THREE.MeshBasicMaterial({ color: 0x2a323c })
     );
     frame.position.set(Math.cos(angle) * frameRadius, 1.8, Math.sin(angle) * frameRadius);
     frame.lookAt(0, 1.8, 0);
@@ -149,11 +142,6 @@ function buildPanels(chartList) {
     const label = makeLabelSprite(item.title);
     label.position.set(x * 1.02, 3.3, z * 1.02);
     group.add(label);
-
-    // Petit socle lumineux au sol devant chaque panneau
-    const spot = new THREE.PointLight(0xffffff, 8, 6);
-    spot.position.set(x * 0.6, 3, z * 0.6);
-    group.add(spot);
   });
 
   scene.add(group);

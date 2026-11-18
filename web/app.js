@@ -1,15 +1,15 @@
 import * as THREE from 'three';
 import { loadRaw, aggregate } from './data.js';
 
-// Décor "Aube corail" : horizon chaud, zénith encore bleuté, sol doré.
-const BOTTOM_COLOR = 0x2b1f26;
-const HORIZON_COLOR = 0xe8794f;
-const TOP_COLOR = 0x24335c;
-const ACCENT = 0xff9d74;
+// Décor "Salle de trading" : intérieur sombre, lueur ambrée au sol, plafond bas,
+// bandeau ticker défilant. Pas de ciel ouvert ici : l'ambiance est architecturale.
+const BG_COLOR = 0x0c0d10;
+const CEILING_COLOR = 0x15171c;
+const ACCENT = 0xffb15c;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(BOTTOM_COLOR);
-scene.fog = new THREE.Fog(BOTTOM_COLOR, 16, 42);
+scene.background = new THREE.Color(BG_COLOR);
+scene.fog = new THREE.Fog(BG_COLOR, 14, 36);
 
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100);
 camera.position.set(0, 1.7, 0);
@@ -19,70 +19,28 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 document.body.appendChild(renderer.domElement);
 
-// Matériaux non-éclairés (MeshBasicMaterial/Shader simple) partout : pas de lumières à calculer -> beaucoup plus léger.
+// Matériaux non-éclairés (MeshBasicMaterial) partout : pas de lumières à calculer -> beaucoup plus léger.
 
-// Ciel en dégradé (un seul mesh, shader minimal, pas de fog pour garder les couleurs nettes)
-const sky = new THREE.Mesh(
-  new THREE.SphereGeometry(55, 16, 12),
-  new THREE.ShaderMaterial({
-    uniforms: {
-      topColor: { value: new THREE.Color(TOP_COLOR) },
-      horizonColor: { value: new THREE.Color(HORIZON_COLOR) },
-      bottomColor: { value: new THREE.Color(BOTTOM_COLOR) }
-    },
-    vertexShader: `
-      varying float vHeight;
-      void main() {
-        vHeight = normalize(position).y;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }`,
-    fragmentShader: `
-      uniform vec3 topColor;
-      uniform vec3 horizonColor;
-      uniform vec3 bottomColor;
-      varying float vHeight;
-      void main() {
-        vec3 col = vHeight > 0.0
-          ? mix(horizonColor, topColor, smoothstep(0.0, 0.4, vHeight))
-          : mix(horizonColor, bottomColor, smoothstep(0.0, -0.35, vHeight));
-        gl_FragColor = vec4(col, 1.0);
-      }`,
-    side: THREE.BackSide,
-    fog: false,
-    depthWrite: false
-  })
+// Plafond bas, plat (une seule face visible depuis l'intérieur)
+const ceiling = new THREE.Mesh(
+  new THREE.CircleGeometry(16, 32),
+  new THREE.MeshBasicMaterial({ color: CEILING_COLOR, side: THREE.BackSide })
 );
-scene.add(sky);
+ceiling.rotation.x = Math.PI / 2;
+ceiling.position.y = 5.5;
+scene.add(ceiling);
 
-// Étoiles lointaines (un seul draw call)
-const starGeo = new THREE.BufferGeometry();
-const STAR_COUNT = 600;
-const starPositions = new Float32Array(STAR_COUNT * 3);
-for (let i = 0; i < STAR_COUNT; i++) {
-  const r = 40 + Math.random() * 12;
-  const theta = Math.random() * Math.PI * 2;
-  const phi = Math.acos(Math.random() * 0.9); // concentré au-dessus de l'horizon
-  starPositions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-  starPositions[i * 3 + 1] = Math.abs(r * Math.cos(phi)) + 2;
-  starPositions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
-}
-starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
-const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({
-  color: 0xffe3c2, size: 0.3, sizeAttenuation: true, transparent: true, opacity: 0.35, fog: false
-}));
-scene.add(stars);
-
-// Sol avec halo radial doux (texture générée une seule fois)
+// Sol avec halo ambré (lueur d'écrans qui se reflète), texture générée une seule fois
 function makeFloorTexture() {
   const size = 512;
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#1c1419';
+  ctx.fillStyle = '#121316';
   ctx.fillRect(0, 0, size, size);
   const glow = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-  glow.addColorStop(0, 'rgba(255,159,116,0.22)');
-  glow.addColorStop(1, 'rgba(255,159,116,0)');
+  glow.addColorStop(0, 'rgba(255,177,92,0.16)');
+  glow.addColorStop(1, 'rgba(255,177,92,0)');
   ctx.fillStyle = glow;
   ctx.fillRect(0, 0, size, size);
   return new THREE.CanvasTexture(canvas);
@@ -94,12 +52,47 @@ const floor = new THREE.Mesh(
 floor.rotation.x = -Math.PI / 2;
 scene.add(floor);
 
-// Grille au sol, teinte rosée assortie à l'aube
-const grid = new THREE.GridHelper(28, 28, 0x8a6a5e, 0x2a1f22);
+// Grille au sol façon dalles, neutre
+const grid = new THREE.GridHelper(28, 28, 0x4a4e58, 0x1c1e24);
 grid.material.transparent = true;
-grid.material.opacity = 0.55;
+grid.material.opacity = 0.5;
 grid.position.y = 0.01;
 scene.add(grid);
+
+// Bandeau ticker défilant (contenu généré depuis les analyses des graphiques)
+function makeTickerTexture(text) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 2048; canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#0a0b0d';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#ffb15c';
+  ctx.font = '600 32px monospace';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 0, canvas.height / 2);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  // repeat.x négatif : on regarde l'intérieur du cylindre, sans ça le texte est en miroir
+  texture.repeat.set(-6, 1);
+  return texture;
+}
+let tickerTexture = makeTickerTexture('CHARGEMENT…');
+const ticker = new THREE.Mesh(
+  new THREE.CylinderGeometry(10.6, 10.6, 0.4, 48, 1, true),
+  new THREE.MeshBasicMaterial({ map: tickerTexture, side: THREE.DoubleSide })
+);
+ticker.position.y = 2.55;
+scene.add(ticker);
+
+function refreshTicker() {
+  const ids = ['evt', 'atk', 'sev', 'pays', 'sect', 'def'];
+  const parts = ids.map(id => window.getChartMeta(id)).filter(Boolean).map(m => m.insight);
+  const text = '   •   ' + parts.join('   •   ');
+  ticker.material.map.dispose();
+  ticker.material.map = makeTickerTexture(text);
+  ticker.material.needsUpdate = true;
+}
 
 // --- Déplacement / contrôles ---
 // Contrôleur maison (pas de Pointer Lock API) : fonctionne aussi dans les
@@ -308,7 +301,7 @@ function buildPanels(chartList) {
     const frameRadius = radius + 0.05;
     const frame = new THREE.Mesh(
       new THREE.PlaneGeometry(4.2, 2.7),
-      new THREE.MeshBasicMaterial({ color: 0x33222c })
+      new THREE.MeshBasicMaterial({ color: 0x1a1b1f })
     );
     frame.position.set(Math.cos(angle) * frameRadius, 1.8, Math.sin(angle) * frameRadius);
     frame.lookAt(0, 1.8, 0);
@@ -343,6 +336,7 @@ loadRaw().then((raw) => {
   const data = aggregate(raw, null);
   const chartList = window.buildDashboard(data);
   buildPanels(chartList);
+  refreshTicker();
 
   const $filter = $('#yearFilter');
   raw.years.forEach(y => $filter.append($('<option>').val(y).text(y)));
@@ -350,6 +344,7 @@ loadRaw().then((raw) => {
     window.CyberSound.playClick();
     const year = this.value || null;
     window.updateDashboard(aggregate(rawData, year));
+    refreshTicker();
   });
 });
 
@@ -417,6 +412,8 @@ function animate() {
     yawObject.translateZ(velocity.z * delta);
     clampToRoom();
   }
+
+  ticker.material.map.offset.x -= delta * 0.08;
 
   updateTooltip();
   updateInsightPlaques(delta);

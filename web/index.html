@@ -16,6 +16,8 @@
 
 <div id="vignette"></div>
 <div id="hint">Clique pour regarder autour de toi — WASD : se déplacer — B : tableau de bord 2D</div>
+<div id="tooltip3d"></div>
+<button id="soundToggle" title="Activer/couper l'ambiance sonore">🔈</button>
 
 <div id="hud">
   <span>WASD : se déplacer • Souris : regarder • B : tableau de bord 2D • Échap : relâcher la souris</span>
@@ -24,6 +26,9 @@
 <div id="dashboard2d">
   <div id="dashboard2d-header">
     <h2>Tableau de bord — Indicateurs Cybersécurité</h2>
+    <label id="yearFilterLabel">Année :
+      <select id="yearFilter"><option value="">Toutes</option></select>
+    </label>
     <button id="closeDashboard">Fermer (B)</button>
   </div>
   <div id="dashboard2d-grid"></div>
@@ -33,6 +38,7 @@
 
 <script src="vendor/jquery.min.js"></script>
 <script src="vendor/chart.umd.js"></script>
+<script src="sound.js"></script>
 <script src="charts.js"></script>
 <script type="module" src="app.js"></script>
 </body>

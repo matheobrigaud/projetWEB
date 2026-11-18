@@ -16,7 +16,7 @@ const bgPlugin = {
 
 function chartConfig(type, labels, values, title) {
   const colors = labels.map((_, i) => PALETTE[i % PALETTE.length]);
-  const base = {
+  return {
     type,
     plugins: [bgPlugin],
     data: {
@@ -29,16 +29,20 @@ function chartConfig(type, labels, values, title) {
         borderWidth: type === 'line' ? 3 : 1,
         fill: type === 'line',
         tension: 0.3,
-        pointBackgroundColor: '#4dabf7'
+        pointBackgroundColor: '#4dabf7',
+        pointRadius: type === 'line' ? 4 : undefined,
+        pointHoverRadius: type === 'line' ? 7 : undefined
       }]
     },
     options: {
       animation: false,
       responsive: false,
       indexAxis: type === 'bar' && /pays/i.test(title) ? 'y' : 'x',
+      interaction: { mode: 'nearest', intersect: false },
       plugins: {
         title: { display: true, text: title, color: '#eee', font: { size: 18 } },
-        legend: { display: type !== 'bar' && type !== 'line', labels: { color: '#ccc' } }
+        legend: { display: type !== 'bar' && type !== 'line', labels: { color: '#ccc' } },
+        tooltip: { enabled: true, backgroundColor: '#0d1117', titleColor: '#9fd3ff', bodyColor: '#eee' }
       },
       scales: ['line', 'bar'].includes(type) ? {
         x: { ticks: { color: '#ccc' }, grid: { color: '#2a323c' } },
@@ -46,7 +50,6 @@ function chartConfig(type, labels, values, title) {
       } : {}
     }
   };
-  return base;
 }
 
 const DEFINITIONS = (data) => [
@@ -58,6 +61,11 @@ const DEFINITIONS = (data) => [
   { id: 'def', title: 'Mécanismes de défense utilisés', type: 'polarArea', ...data.defenses }
 ];
 
+const chartsById = {};      // id -> Chart (texture 3D)
+const flatChartsById = {};  // id -> Chart (tableau de bord 2D)
+const texCanvasById = {};   // id -> <canvas> (texture 3D)
+const metaById = {};        // id -> { title, labels, values, type } pour le tooltip 3D
+
 // Construit les graphiques en double : un canvas haute résolution (texture 3D)
 // et un canvas visible dans le tableau de bord 2D. Retourne la liste pour three.js.
 window.buildDashboard = function (data) {
@@ -68,21 +76,83 @@ window.buildDashboard = function (data) {
   const $grid = $('#dashboard2d-grid').empty();
 
   defs.forEach(def => {
-    const cfg = chartConfig(def.type, def.labels, def.values, def.title);
-
     const $texCanvas = $('<canvas>').attr({ id: 'tex-' + def.id, width: 768, height: 480 });
     $factory.append($texCanvas);
-    new Chart($texCanvas[0].getContext('2d'), cfg);
+    const texChart = new Chart($texCanvas[0].getContext('2d'), chartConfig(def.type, def.labels, def.values, def.title));
 
-    const $card = $('<div>').addClass('chart-card');
+    const $card = $('<div>').addClass('chart-card').attr('data-id', def.id);
     $('<h3>').text(def.title).appendTo($card);
     const $flatCanvas = $('<canvas>').attr({ id: 'flat-' + def.id, width: 420, height: 280 });
     $card.append($flatCanvas);
-    $grid.append($card);
-    new Chart($flatCanvas[0].getContext('2d'), chartConfig(def.type, def.labels, def.values, def.title));
 
-    results.push({ title: def.title, canvas: $texCanvas[0] });
+    if (def.id === 'evt') {
+      const $scrub = $('<div>').addClass('scrub-controls');
+      const $range = $('<input>').attr({ type: 'range', min: 0, max: Math.max(def.labels.length - 1, 0), value: def.labels.length - 1, step: 1 });
+      const $label = $('<div>').addClass('scrub-label');
+      $scrub.append($range, $label);
+      $card.append($scrub);
+      const updateLabel = (idx) => {
+        const val = Math.round(def.values[idx] || 0).toLocaleString('fr-FR');
+        $label.text(`Année sélectionnée : ${def.labels[idx]} — ${val} événements`);
+      };
+      $range.on('input', function () {
+        const idx = +this.value;
+        updateLabel(idx);
+        window.scrubEvt(idx);
+      });
+      $range.on('change', () => { if (window.CyberSound) window.CyberSound.playClick(); });
+      updateLabel(def.labels.length - 1);
+    }
+
+    $grid.append($card);
+    const flatChart = new Chart($flatCanvas[0].getContext('2d'), chartConfig(def.type, def.labels, def.values, def.title));
+
+    chartsById[def.id] = texChart;
+    flatChartsById[def.id] = flatChart;
+    texCanvasById[def.id] = $texCanvas[0];
+    metaById[def.id] = { title: def.title, labels: def.labels, values: def.values, type: def.type };
+
+    results.push({ id: def.id, title: def.title, canvas: $texCanvas[0] });
   });
 
   return results;
 };
+
+// Met à jour les graphiques déjà construits (filtre année) sans tout recréer.
+window.updateDashboard = function (data) {
+  const defs = DEFINITIONS(data);
+  const updatedIds = [];
+  defs.forEach(def => {
+    const colors = def.labels.map((_, i) => PALETTE[i % PALETTE.length]);
+    [chartsById[def.id], flatChartsById[def.id]].forEach(ch => {
+      if (!ch) return;
+      ch.data.labels = def.labels;
+      ch.data.datasets[0].data = def.values;
+      if (ch.config.type !== 'line') ch.data.datasets[0].backgroundColor = colors;
+      ch.update('none');
+    });
+    metaById[def.id] = { title: def.title, labels: def.labels, values: def.values, type: def.type };
+    updatedIds.push(def.id);
+    if (window.onChartTextureDirty) window.onChartTextureDirty(def.id);
+  });
+  return updatedIds;
+};
+
+// Déplace le curseur de valeur active sur le graphique d'évolution (3D + 2D).
+window.scrubEvt = function (index) {
+  ['evt'].forEach(id => {
+    [chartsById[id], flatChartsById[id]].forEach(ch => {
+      if (!ch) return;
+      const meta = ch.getDatasetMeta(0);
+      const point = meta.data[index];
+      if (!point) return;
+      ch.setActiveElements([{ datasetIndex: 0, index }]);
+      ch.tooltip.setActiveElements([{ datasetIndex: 0, index }], { x: point.x, y: point.y });
+      ch.update();
+    });
+    if (window.onChartTextureDirty) window.onChartTextureDirty(id);
+  });
+};
+
+window.getChartMeta = (id) => metaById[id];
+window.getTexCanvas = (id) => texCanvasById[id];

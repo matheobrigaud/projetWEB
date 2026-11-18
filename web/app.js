@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { loadData } from './data.js';
+import { loadRaw, aggregate } from './data.js';
 
 const BOTTOM_COLOR = 0x0a0e17;
 const HORIZON_COLOR = 0x24375e;
@@ -111,9 +111,24 @@ scene.add(yawObject);
 
 const hint = document.getElementById('hint');
 const hud = document.getElementById('hud');
+const tooltip3d = document.getElementById('tooltip3d');
+const soundToggle = document.getElementById('soundToggle');
 const crosshair = document.createElement('div');
 crosshair.id = 'crosshair';
 document.body.appendChild(crosshair);
+
+soundToggle.addEventListener('click', () => {
+  if (window.CyberSound.isAmbientOn()) {
+    window.CyberSound.stopAmbient();
+    soundToggle.textContent = '🔈';
+    soundToggle.classList.remove('on');
+  } else {
+    window.CyberSound.startAmbient();
+    window.CyberSound.playClick();
+    soundToggle.textContent = '🔊';
+    soundToggle.classList.add('on');
+  }
+});
 
 const isDashboardOpen = () => document.getElementById('dashboard2d').style.display === 'block';
 let engaged = false;
@@ -124,6 +139,7 @@ const PITCH_LIMIT = Math.PI / 2 - 0.05;
 
 function engage() {
   if (isDashboardOpen()) return;
+  if (!engaged) window.CyberSound.playClick();
   engaged = true;
   hint.classList.add('hidden');
   if (renderer.domElement.requestPointerLock) {
@@ -174,6 +190,7 @@ function toggleDashboard2D() {
   const panel = document.getElementById('dashboard2d');
   const show = panel.style.display !== 'block';
   panel.style.display = show ? 'block' : 'none';
+  window.CyberSound.playClick();
   if (show) {
     disengage();
     hint.classList.add('hidden');
@@ -214,6 +231,14 @@ function makeLabelSprite(text) {
   return sprite;
 }
 
+const textureById = {};
+const panelMeshes = [];
+
+// Appelé par charts.js quand un graphique est mis à jour (filtre année, curseur temporel)
+window.onChartTextureDirty = (id) => {
+  if (textureById[id]) textureById[id].needsUpdate = true;
+};
+
 function buildPanels(chartList) {
   const radius = 9;
   const count = chartList.length;
@@ -227,6 +252,7 @@ function buildPanels(chartList) {
     const texture = new THREE.CanvasTexture(item.canvas);
     texture.needsUpdate = true;
     texture.colorSpace = THREE.SRGBColorSpace;
+    textureById[item.id] = texture;
 
     const panel = new THREE.Mesh(
       new THREE.PlaneGeometry(4, 2.5),
@@ -234,6 +260,8 @@ function buildPanels(chartList) {
     );
     panel.position.set(x, 1.8, z);
     panel.lookAt(0, 1.8, 0);
+    panel.userData.id = item.id;
+    panelMeshes.push(panel);
     group.add(panel);
 
     // Cadre, placé légèrement en retrait (plus loin du centre) derrière le panneau
@@ -260,9 +288,20 @@ titleSprite.scale.set(5, 0.9, 1);
 titleSprite.position.set(0, 3.8, 0);
 scene.add(titleSprite);
 
-loadData().then((data) => {
+let rawData = null;
+loadRaw().then((raw) => {
+  rawData = raw;
+  const data = aggregate(raw, null);
   const chartList = window.buildDashboard(data);
   buildPanels(chartList);
+
+  const $filter = $('#yearFilter');
+  raw.years.forEach(y => $filter.append($('<option>').val(y).text(y)));
+  $filter.on('change', function () {
+    window.CyberSound.playClick();
+    const year = this.value || null;
+    window.updateDashboard(aggregate(rawData, year));
+  });
 });
 
 window.addEventListener('resize', () => {
@@ -270,6 +309,31 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
+
+// --- Tooltip 3D : raycast depuis le viseur vers les panneaux ---
+const raycaster = new THREE.Raycaster();
+const camDir = new THREE.Vector3();
+const camPos = new THREE.Vector3();
+function updateTooltip() {
+  if (!engaged || isDashboardOpen() || panelMeshes.length === 0) {
+    tooltip3d.style.display = 'none';
+    return;
+  }
+  camera.getWorldPosition(camPos);
+  camera.getWorldDirection(camDir);
+  raycaster.set(camPos, camDir);
+  const hits = raycaster.intersectObjects(panelMeshes);
+  if (hits.length && hits[0].distance < 11) {
+    const meta = window.getChartMeta(hits[0].object.userData.id);
+    if (meta) {
+      const rows = meta.labels.map((l, i) => `${l} : ${Math.round(meta.values[i]).toLocaleString('fr-FR')}`).slice(0, 7);
+      tooltip3d.innerHTML = `<strong>${meta.title}</strong><br>${rows.join('<br>')}`;
+      tooltip3d.style.display = 'block';
+      return;
+    }
+  }
+  tooltip3d.style.display = 'none';
+}
 
 const clock = new THREE.Clock();
 function animate() {
@@ -293,6 +357,7 @@ function animate() {
     clampToRoom();
   }
 
+  updateTooltip();
   renderer.render(scene, camera);
 }
 animate();

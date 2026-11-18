@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Dashboard Cyber - Galerie 3D</title>
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/three.module.js",
+    "three/addons/": "./vendor/three/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+
+<div id="blocker">
+  <div id="instructions">
+    <h1>Dashboard Cybersécurité — Galerie 3D</h1>
+    <p>Clique pour entrer dans la salle</p>
+    <p>Déplacement : <b>W A S D</b> — Regarder : <b>Souris</b> — Sortir : <b>Échap</b></p>
+    <p>Appuie sur <b>B</b> à tout moment pour afficher le tableau de bord 2D (jQuery)</p>
+  </div>
+</div>
+
+<div id="hud">
+  <span>WASD : se déplacer • Souris : regarder • B : tableau de bord 2D • Échap : relâcher la souris</span>
+</div>
+
+<div id="dashboard2d">
+  <div id="dashboard2d-header">
+    <h2>Tableau de bord — Indicateurs Cybersécurité</h2>
+    <button id="closeDashboard">Fermer (B)</button>
+  </div>
+  <div id="dashboard2d-grid"></div>
+</div>
+
+<div id="chart-factory"></div>
+
+<script src="vendor/jquery.min.js"></script>
+<script src="vendor/chart.umd.js"></script>
+<script src="charts.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

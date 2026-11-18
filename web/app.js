@@ -2,9 +2,14 @@ import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { loadData } from './data.js';
 
+const BOTTOM_COLOR = 0x0a0e17;
+const HORIZON_COLOR = 0x24375e;
+const TOP_COLOR = 0x33267a;
+const ACCENT = 0x4dabf7;
+
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0b0e13);
-scene.fog = new THREE.Fog(0x0b0e13, 15, 40);
+scene.background = new THREE.Color(BOTTOM_COLOR);
+scene.fog = new THREE.Fog(BOTTOM_COLOR, 16, 42);
 
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100);
 camera.position.set(0, 1.7, 0);
@@ -14,17 +19,85 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 document.body.appendChild(renderer.domElement);
 
-// Matériaux non-éclairés (MeshBasicMaterial) partout : pas de lumières à calculer -> beaucoup plus léger.
-// Sol
+// Matériaux non-éclairés (MeshBasicMaterial/Shader simple) partout : pas de lumières à calculer -> beaucoup plus léger.
+
+// Ciel en dégradé (un seul mesh, shader minimal, pas de fog pour garder les couleurs nettes)
+const sky = new THREE.Mesh(
+  new THREE.SphereGeometry(55, 16, 12),
+  new THREE.ShaderMaterial({
+    uniforms: {
+      topColor: { value: new THREE.Color(TOP_COLOR) },
+      horizonColor: { value: new THREE.Color(HORIZON_COLOR) },
+      bottomColor: { value: new THREE.Color(BOTTOM_COLOR) }
+    },
+    vertexShader: `
+      varying float vHeight;
+      void main() {
+        vHeight = normalize(position).y;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: `
+      uniform vec3 topColor;
+      uniform vec3 horizonColor;
+      uniform vec3 bottomColor;
+      varying float vHeight;
+      void main() {
+        vec3 col = vHeight > 0.0
+          ? mix(horizonColor, topColor, smoothstep(0.0, 1.0, vHeight))
+          : mix(horizonColor, bottomColor, smoothstep(0.0, -0.5, vHeight));
+        gl_FragColor = vec4(col, 1.0);
+      }`,
+    side: THREE.BackSide,
+    fog: false,
+    depthWrite: false
+  })
+);
+scene.add(sky);
+
+// Étoiles lointaines (un seul draw call)
+const starGeo = new THREE.BufferGeometry();
+const STAR_COUNT = 600;
+const starPositions = new Float32Array(STAR_COUNT * 3);
+for (let i = 0; i < STAR_COUNT; i++) {
+  const r = 40 + Math.random() * 12;
+  const theta = Math.random() * Math.PI * 2;
+  const phi = Math.acos(Math.random() * 0.9); // concentré au-dessus de l'horizon
+  starPositions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+  starPositions[i * 3 + 1] = Math.abs(r * Math.cos(phi)) + 2;
+  starPositions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+}
+starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({
+  color: 0xaecbff, size: 0.35, sizeAttenuation: true, transparent: true, opacity: 0.8, fog: false
+}));
+scene.add(stars);
+
+// Sol avec halo radial doux (texture générée une seule fois)
+function makeFloorTexture() {
+  const size = 512;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#12161f';
+  ctx.fillRect(0, 0, size, size);
+  const glow = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  glow.addColorStop(0, 'rgba(77,171,247,0.18)');
+  glow.addColorStop(1, 'rgba(77,171,247,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, size, size);
+  return new THREE.CanvasTexture(canvas);
+}
 const floor = new THREE.Mesh(
   new THREE.CircleGeometry(14, 48),
-  new THREE.MeshBasicMaterial({ color: 0x1a2029 })
+  new THREE.MeshBasicMaterial({ map: makeFloorTexture() })
 );
 floor.rotation.x = -Math.PI / 2;
 scene.add(floor);
 
-// Grille au sol pour le repère visuel
-const grid = new THREE.GridHelper(28, 28, 0x344155, 0x1f2733);
+// Grille au sol, teinte cyan pour un look "cyber"
+const grid = new THREE.GridHelper(28, 28, 0x3d6a8c, 0x1a2230);
+grid.material.transparent = true;
+grid.material.opacity = 0.55;
 grid.position.y = 0.01;
 scene.add(grid);
 
@@ -133,7 +206,7 @@ function buildPanels(chartList) {
     const frameRadius = radius + 0.05;
     const frame = new THREE.Mesh(
       new THREE.PlaneGeometry(4.2, 2.7),
-      new THREE.MeshBasicMaterial({ color: 0x2a323c })
+      new THREE.MeshBasicMaterial({ color: 0x1f2740 })
     );
     frame.position.set(Math.cos(angle) * frameRadius, 1.8, Math.sin(angle) * frameRadius);
     frame.lookAt(0, 1.8, 0);

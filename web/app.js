@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { loadData } from './data.js';
 
 const BOTTOM_COLOR = 0x0a0e17;
@@ -102,7 +101,14 @@ grid.position.y = 0.01;
 scene.add(grid);
 
 // --- Déplacement / contrôles ---
-const controls = new PointerLockControls(camera, document.body);
+// Contrôleur maison (pas de Pointer Lock API) : fonctionne aussi dans les
+// previews embarquées (iframe, VSCode...) où cette API est bloquée.
+const yawObject = new THREE.Object3D();
+yawObject.position.set(0, 1.7, 0);
+camera.position.set(0, 0, 0);
+yawObject.add(camera);
+scene.add(yawObject);
+
 const hint = document.getElementById('hint');
 const hud = document.getElementById('hud');
 const crosshair = document.createElement('div');
@@ -110,9 +116,37 @@ crosshair.id = 'crosshair';
 document.body.appendChild(crosshair);
 
 const isDashboardOpen = () => document.getElementById('dashboard2d').style.display === 'block';
-renderer.domElement.addEventListener('click', () => { if (!isDashboardOpen()) controls.lock(); });
-controls.addEventListener('lock', () => hint.classList.add('hidden'));
-controls.addEventListener('unlock', () => { if (!isDashboardOpen()) hint.classList.remove('hidden'); });
+let engaged = false;
+let yaw = 0;
+let pitch = 0;
+const LOOK_SPEED = 0.0025;
+const PITCH_LIMIT = Math.PI / 2 - 0.05;
+
+function engage() {
+  if (isDashboardOpen()) return;
+  engaged = true;
+  hint.classList.add('hidden');
+  if (renderer.domElement.requestPointerLock) {
+    renderer.domElement.requestPointerLock().catch(() => {});
+  }
+}
+function disengage() {
+  engaged = false;
+  if (!isDashboardOpen()) hint.classList.remove('hidden');
+  if (document.pointerLockElement) document.exitPointerLock();
+}
+
+renderer.domElement.addEventListener('click', engage);
+document.addEventListener('keydown', (e) => { if (e.code === 'Escape') disengage(); });
+
+document.addEventListener('mousemove', (e) => {
+  if (!engaged || isDashboardOpen()) return;
+  yaw -= e.movementX * LOOK_SPEED;
+  pitch -= e.movementY * LOOK_SPEED;
+  pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, pitch));
+  yawObject.rotation.y = yaw;
+  camera.rotation.x = pitch;
+});
 
 const move = { forward: false, backward: false, left: false, right: false };
 const velocity = new THREE.Vector3();
@@ -141,7 +175,7 @@ function toggleDashboard2D() {
   const show = panel.style.display !== 'block';
   panel.style.display = show ? 'block' : 'none';
   if (show) {
-    controls.unlock();
+    disengage();
     hint.classList.add('hidden');
     hud.style.display = 'none';
   } else {
@@ -152,7 +186,7 @@ document.getElementById('closeDashboard').addEventListener('click', toggleDashbo
 
 const ROOM_RADIUS = 12.5;
 function clampToRoom() {
-  const pos = controls.getObject().position;
+  const pos = yawObject.position;
   const dist = Math.hypot(pos.x, pos.z);
   if (dist > ROOM_RADIUS) {
     const scale = ROOM_RADIUS / dist;
@@ -242,20 +276,20 @@ function animate() {
   requestAnimationFrame(animate);
   const delta = clock.getDelta();
 
-  if (controls.isLocked) {
+  if (engaged && !isDashboardOpen()) {
     velocity.x -= velocity.x * 10 * delta;
     velocity.z -= velocity.z * 10 * delta;
 
     const dir = new THREE.Vector3();
     dir.z = Number(move.forward) - Number(move.backward);
     dir.x = Number(move.right) - Number(move.left);
-    dir.normalize();
+    if (dir.x !== 0 || dir.z !== 0) dir.normalize();
 
     if (move.forward || move.backward) velocity.z -= dir.z * SPEED * 10 * delta;
     if (move.left || move.right) velocity.x -= dir.x * SPEED * 10 * delta;
 
-    controls.moveRight(-velocity.x * delta);
-    controls.moveForward(-velocity.z * delta);
+    yawObject.translateX(-velocity.x * delta);
+    yawObject.translateZ(-velocity.z * delta);
     clampToRoom();
   }
 

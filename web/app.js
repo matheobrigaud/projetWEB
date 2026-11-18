@@ -1,10 +1,11 @@
 import * as THREE from 'three';
 import { loadRaw, aggregate } from './data.js';
 
-const BOTTOM_COLOR = 0x0a0e17;
-const HORIZON_COLOR = 0x24375e;
-const TOP_COLOR = 0x33267a;
-const ACCENT = 0x4dabf7;
+// Décor "Aube corail" : horizon chaud, zénith encore bleuté, sol doré.
+const BOTTOM_COLOR = 0x2b1f26;
+const HORIZON_COLOR = 0xe8794f;
+const TOP_COLOR = 0x24335c;
+const ACCENT = 0xff9d74;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(BOTTOM_COLOR);
@@ -42,8 +43,8 @@ const sky = new THREE.Mesh(
       varying float vHeight;
       void main() {
         vec3 col = vHeight > 0.0
-          ? mix(horizonColor, topColor, smoothstep(0.0, 1.0, vHeight))
-          : mix(horizonColor, bottomColor, smoothstep(0.0, -0.5, vHeight));
+          ? mix(horizonColor, topColor, smoothstep(0.0, 0.4, vHeight))
+          : mix(horizonColor, bottomColor, smoothstep(0.0, -0.35, vHeight));
         gl_FragColor = vec4(col, 1.0);
       }`,
     side: THREE.BackSide,
@@ -67,7 +68,7 @@ for (let i = 0; i < STAR_COUNT; i++) {
 }
 starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
 const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({
-  color: 0xaecbff, size: 0.35, sizeAttenuation: true, transparent: true, opacity: 0.8, fog: false
+  color: 0xffe3c2, size: 0.3, sizeAttenuation: true, transparent: true, opacity: 0.35, fog: false
 }));
 scene.add(stars);
 
@@ -77,11 +78,11 @@ function makeFloorTexture() {
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#12161f';
+  ctx.fillStyle = '#1c1419';
   ctx.fillRect(0, 0, size, size);
   const glow = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-  glow.addColorStop(0, 'rgba(77,171,247,0.18)');
-  glow.addColorStop(1, 'rgba(77,171,247,0)');
+  glow.addColorStop(0, 'rgba(255,159,116,0.22)');
+  glow.addColorStop(1, 'rgba(255,159,116,0)');
   ctx.fillStyle = glow;
   ctx.fillRect(0, 0, size, size);
   return new THREE.CanvasTexture(canvas);
@@ -93,8 +94,8 @@ const floor = new THREE.Mesh(
 floor.rotation.x = -Math.PI / 2;
 scene.add(floor);
 
-// Grille au sol, teinte cyan pour un look "cyber"
-const grid = new THREE.GridHelper(28, 28, 0x3d6a8c, 0x1a2230);
+// Grille au sol, teinte rosée assortie à l'aube
+const grid = new THREE.GridHelper(28, 28, 0x8a6a5e, 0x2a1f22);
 grid.material.transparent = true;
 grid.material.opacity = 0.55;
 grid.position.y = 0.01;
@@ -307,7 +308,7 @@ function buildPanels(chartList) {
     const frameRadius = radius + 0.05;
     const frame = new THREE.Mesh(
       new THREE.PlaneGeometry(4.2, 2.7),
-      new THREE.MeshBasicMaterial({ color: 0x1f2740 })
+      new THREE.MeshBasicMaterial({ color: 0x33222c })
     );
     frame.position.set(Math.cos(angle) * frameRadius, 1.8, Math.sin(angle) * frameRadius);
     frame.lookAt(0, 1.8, 0);
